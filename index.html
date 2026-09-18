@@ -825,6 +825,11 @@ body.modal-open .map-box{visibility:hidden}
 .legal-doc th{background:var(--mint);color:var(--ink);font-weight:700}
 .tofill{background:#FFF3CD;border-bottom:1px dashed #C9A227;color:#7A5B00;padding:0 4px;border-radius:3px;font-weight:600}
 @media(max-width:900px){.legal-wrap{grid-template-columns:1fr}.legal-nav{position:static;flex-direction:row;flex-wrap:wrap}}
+.ck-bar{position:fixed;left:16px;bottom:16px;z-index:9000;background:var(--white);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:10px 12px 10px 16px;display:flex;gap:12px;align-items:center;max-width:420px}
+.ck-bar p{font-size:13px;line-height:1.35;color:var(--ink-soft);margin:0}
+.ck-acts{display:flex;gap:6px;flex-shrink:0}
+.ck-acts .btn{padding:7px 14px;font-size:13px}
+@media(max-width:560px){.ck-bar{left:12px;right:12px;max-width:none}}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -2739,6 +2744,7 @@ function candIsFeminine(prenom){
   return /[ae]$/.test(n)||/(ine|elle|ette|enne|ille|ie)$/.test(n);
 }
 function makeApplication(o,share){
+  if(window.prTrack)prTrack('candidature_envoyee',{item_name:(o&&o.role)||'',ville:(o&&o.ville)||'',coordonnees_partagees:!!share});
   let th=state.threads.find(t=>t.kind==='offre'&&t.refId===o._id);
   if(!th){
     const me=session.profile||{};
@@ -3118,6 +3124,7 @@ $('#depPay').addEventListener('click',()=>{
 /* Enregistre l'offre puis redirige vers le paiement sécurisé Stripe.
    L'offre reste « non payée » tant que Stripe ne l'a pas confirmé. */
 async function startOfferCheckout(o){
+  if(window.prTrack)prTrack('begin_checkout',{currency:'EUR',value:(o&&o.alaune)?25:15,item_name:(o&&o.role)||'Offre',ville:(o&&o.ville)||''});
   const btn=$('#depPay');
   const label=btn?btn.textContent:'';
   if(btn){btn.disabled=true;btn.textContent='Redirection vers le paiement…';}
@@ -3161,6 +3168,7 @@ async function handlePaymentReturn(){
   }
   if(st==='ok'){
     try{localStorage.removeItem('pr_pending_payment');}catch(e){}
+    if(window.prTrack)prTrack('purchase',{currency:'EUR',transaction_id:q.get('ref')||'',value:15});
     await refreshAuthUser();
     restoreSession();
     session.acctView='annonces';
@@ -3345,6 +3353,7 @@ async function oauthLogin(provider){
 }
 function doLogin(type,silent){
   session.loggedIn=true;session.role=type;
+  if(window.prTrack)prTrack(silent?'login':'connexion',{type_compte:type});
   try{localStorage.setItem('pr_role',type);}catch(e){}
   /* On mémorise le type de compte dans Supabase s'il n'y est pas encore (utile après Google / Facebook) */
   if(supa&&authUser&&!((authUser.user_metadata||{}).role)){supa.auth.updateUser({data:{role:type}}).catch(()=>{});}
@@ -3917,6 +3926,44 @@ function restoreSession(){
   refreshAuthUser().then(()=>{restoreSession();loadApprovedCandidates();handlePaymentReturn();});
   const ceSend=$('#ceSend');if(ceSend)ceSend.addEventListener('click',async()=>{const n=($('#ceNom').value||'').trim(),m=($('#ceMail').value||'').trim(),msg=($('#ceMsg')?$('#ceMsg').value.trim():'');if(!n||!m){toast("Indiquez au moins votre nom et votre e-mail.");return;}if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(m)){toast("L'adresse e-mail n'est pas valide.");return;}ceSend.disabled=true;const ok=await saveContactToDB(n,m,msg);ceSend.disabled=false;if(!ok){toast("Envoi impossible pour le moment. Écrivez-nous sur WhatsApp ou par e-mail.");return;}$('#ceNom').value='';$('#ceMail').value='';if($('#ceMsg'))$('#ceMsg').value='';toast("Merci ! Votre message a bien été envoyé, nous vous répondrons rapidement.");});
   navTo('accueil');
+})();
+</script>
+<div class="ck-bar hidden" id="ckBar" role="dialog" aria-label="Cookies de mesure d'audience">
+  <p>Cookies de mesure d'audience ?</p>
+  <div class="ck-acts"><button class="btn btn-ghost" id="ckNo">Refuser</button><button class="btn btn-primary" id="ckYes">Accepter</button></div>
+</div>
+<script>
+/* ===== Mesure d'audience — chargée uniquement après acceptation ===== */
+(function(){
+  var GA_ID='G-ZJ998RHWYQ', KEY='pr_cookies';
+  window.dataLayer=window.dataLayer||[];
+  window.gtag=function(){dataLayer.push(arguments);};
+  gtag('js',new Date());
+  gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied'});
+  var loaded=false;
+  function loadGA(){
+    if(loaded)return;loaded=true;
+    var sc=document.createElement('script');sc.async=true;sc.src='https://www.googletagmanager.com/gtag/js?id='+GA_ID;
+    document.head.appendChild(sc);
+    gtag('consent','update',{analytics_storage:'granted'});
+    gtag('config',GA_ID,{anonymize_ip:true});
+  }
+  function choix(){try{return localStorage.getItem(KEY);}catch(e){return null;}}
+  function setChoix(v){try{localStorage.setItem(KEY,v);}catch(e){}}
+  /* Suivi d'une action clé du site (sans effet si l'internaute a refusé) */
+  window.prTrack=function(nom,params){
+    try{ if(choix()==='oui'&&typeof gtag==='function')gtag('event',nom,params||{}); }catch(e){}
+  };
+  function fermer(){var b=document.getElementById('ckBar');if(b)b.classList.add('hidden');}
+  document.addEventListener('DOMContentLoaded',function(){
+    var bar=document.getElementById('ckBar');
+    if(choix()==='oui'){loadGA();return;}
+    if(choix()==='non')return;
+    if(bar)bar.classList.remove('hidden');
+    var y=document.getElementById('ckYes'),n=document.getElementById('ckNo');
+    if(y)y.addEventListener('click',function(){setChoix('oui');fermer();loadGA();});
+    if(n)n.addEventListener('click',function(){setChoix('non');fermer();});
+  });
 })();
 </script>
 </body>
