@@ -73,18 +73,18 @@ Deno.serve(async (req) => {
   try {
     const url = Deno.env.get("SUPABASE_URL")!;
     // 1. Seul l'administrateur peut déclencher l'envoi
-    const authHeader = req.headers.get("Authorization") || "";
-    const asUser = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: u } = await asUser.auth.getUser();
-    if (!u?.user || String(u.user.email).toLowerCase() !== ADMIN_EMAIL) return json({ ok: false, error: "Accès refusé" }, 403);
+    const db = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    if (!token) return json({ ok: false, error: "Accès refusé (non connecté)" }, 401);
+    const { data: u, error: authErr } = await db.auth.getUser(token);
+    const who = String(u?.user?.email || "").toLowerCase();
+    if (authErr || !u?.user) return json({ ok: false, error: "Accès refusé (session invalide : " + (authErr?.message || "inconnue") + ") — déconnectez-vous puis reconnectez-vous à l'admin" }, 403);
+    if (who !== ADMIN_EMAIL) return json({ ok: false, error: "Accès refusé (connecté en tant que " + who + ")" }, 403);
 
     const { pharmacyId } = await req.json().catch(() => ({}));
     if (!pharmacyId) return json({ ok: false, error: "pharmacyId manquant" }, 400);
 
     // 2. Fiche pharmacie
-    const db = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { data: row, error } = await db.from("accounts_pharmacies").select("*").eq("id", pharmacyId).maybeSingle();
     if (error) return json({ ok: false, error: error.message }, 500);
     if (!row) return json({ ok: false, error: "Fiche pharmacie introuvable" }, 404);
