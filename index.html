@@ -3229,7 +3229,8 @@ $('#depToAccount').addEventListener('click',()=>{session.acctView='annonces';nav
 function handleDeepLink(){
   const q=new URLSearchParams(window.location.search);
   if(q.get('go')!=='deposer')return;
-  try{history.replaceState({v:'accueil',av:null},'',window.location.pathname);}catch(e){}
+  q.delete('go');const _qs=q.toString();
+  try{history.replaceState({v:'accueil',av:null},'',window.location.pathname+(_qs?'?'+_qs:''));}catch(e){}
   if(isAuthed()){navTo('deposer');return;}
   try{localStorage.setItem('pr_after_login','deposer');}catch(e){}
   loginPreselect='pharmacie';loginMode='login';acctSectionAfterLogin='dashboard';
@@ -4032,17 +4033,22 @@ function restoreSession(){
      la version d\u00e9couverte alors que la pharmacie a droit \u00e0 la version compl\u00e8te. */
   refreshAuthUser().then(()=>{restoreSession();loadApprovedCandidates();handlePaymentReturn();handleDeepLink();});
   const ceSend=$('#ceSend');if(ceSend)ceSend.addEventListener('click',async()=>{const n=($('#ceNom').value||'').trim(),m=($('#ceMail').value||'').trim(),msg=($('#ceMsg')?$('#ceMsg').value.trim():'');if(!n||!m){toast("Indiquez au moins votre nom et votre e-mail.");return;}if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(m)){toast("L'adresse e-mail n'est pas valide.");return;}ceSend.disabled=true;const ok=await saveContactToDB(n,m,msg);ceSend.disabled=false;if(!ok){toast("Envoi impossible pour le moment. Écrivez-nous sur WhatsApp ou par e-mail.");return;}$('#ceNom').value='';$('#ceMail').value='';if($('#ceMsg'))$('#ceMsg').value='';toast("Merci ! Votre message a bien été envoyé, nous vous répondrons rapidement.");});
-  navTo('accueil');
+  /* Lien direct (annonces Google, Facebook…) : pharmarecrut.fr/?go=vente ouvre directement l'écran voulu */
+  const _go=new URLSearchParams(location.search).get('go');
+  if(['offres','pharmaciens','candidat','vente','tarifs'].includes(_go)){
+    _prLastView=_go;_navSuppress=true;navTo(_go);_navSuppress=false;
+    try{history.replaceState({v:_go,av:null},'',location.pathname+location.search);}catch(e){}
+  }else navTo('accueil');
 })();
 </script>
-<div class="ck-bar hidden" id="ckBar" role="dialog" aria-label="Cookies de mesure d'audience">
-  <p>Cookies de mesure d'audience ?</p>
+<div class="ck-bar hidden" id="ckBar" role="dialog" aria-label="Cookies de mesure d'audience et de publicité">
+  <p>Cookies de mesure d'audience et de publicité ? <a href="/confidentialite.html#cookies" style="color:inherit">En savoir plus</a></p>
   <div class="ck-acts"><button class="btn btn-ghost" id="ckNo">Refuser</button><button class="btn btn-primary" id="ckYes">Accepter</button></div>
 </div>
 <script>
 /* ===== Mesure d'audience — chargée uniquement après acceptation ===== */
 (function(){
-  var GA_ID='G-ZJ998RHWYQ', KEY='pr_cookies';
+  var GA_ID='G-ZJ998RHWYQ', KEY='pr_cookies2';
   window.dataLayer=window.dataLayer||[];
   window.gtag=function(){dataLayer.push(arguments);};
   gtag('js',new Date());
@@ -4052,7 +4058,7 @@ function restoreSession(){
     if(loaded)return;loaded=true;
     var sc=document.createElement('script');sc.async=true;sc.src='https://www.googletagmanager.com/gtag/js?id='+GA_ID;
     document.head.appendChild(sc);
-    gtag('consent','update',{analytics_storage:'granted'});
+    gtag('consent','update',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
     gtag('config',GA_ID,{anonymize_ip:true});
   }
   function choix(){try{return localStorage.getItem(KEY);}catch(e){return null;}}
