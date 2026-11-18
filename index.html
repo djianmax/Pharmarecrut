@@ -1554,7 +1554,7 @@ async function saveCandidateToDB(p){
     let r=await supa.from('profiles_candidates').insert(Object.assign({status:'pending'},row)).select('id').maybeSingle();
     if(r.error){r=await supa.from('profiles_candidates').insert(Object.assign({status:'pending'},row));}
     if(r.error)console.warn('Enregistrement profil — erreur Supabase :',r.error.message);
-    else{if(r.data&&r.data.id)p._dbId=r.data.id;console.log('Profil enregistré dans Supabase (en attente de validation).');}
+    else{if(r.data&&r.data.id)p._dbId=r.data.id;console.log('Profil enregistré dans Supabase (en attente de validation).');if(window.prTrack)prTrack('cv_depose',{type_profil:p.role||''});}
   }catch(e){console.warn('Enregistrement profil — exception :',e);}
 }
 /* Recharge le profil du candidat connecté depuis Supabase (après connexion) */
@@ -1617,7 +1617,7 @@ async function saveCessionToDB(c){
       payload:c
     });
     if(error)console.warn('Enregistrement cession — erreur Supabase :',error.message);
-    else console.log('Cession enregistrée dans Supabase (en attente de validation).');
+    else{console.log('Cession enregistrée dans Supabase (en attente de validation).');if(window.prTrack)prTrack('cession_deposee',{ville:c.ville||'',type_bien:c.type||''});}
   }catch(e){console.warn('Enregistrement cession — exception :',e);}
 }
 /* Enregistre un message du formulaire de contact « Une question ? » dans la table "contact_messages". */
@@ -1626,7 +1626,7 @@ async function saveContactToDB(nom,email,message){
   try{
     const {error}=await supa.from('contact_messages').insert({nom:nom||null,email:email||null,message:message||null});
     if(error){console.warn('Enregistrement message — erreur Supabase :',error.message);return false;}
-    console.log('Message de contact enregistré dans Supabase.');return true;
+    console.log('Message de contact enregistré dans Supabase.');if(window.prTrack)prTrack('generate_lead',{formulaire:'contact'});return true;
   }catch(e){console.warn('Enregistrement message — exception :',e);return false;}
 }
 /* Enregistre une demande « Vous n'avez pas trouvé votre offre ? » dans la table "demandes_offre". */
@@ -1637,7 +1637,7 @@ async function saveLeadToDB(d){
       nom:d.nom||null,telephone:d.tel||null,ville:d.ville||null,specialite:d.spe||null,message:d.msg||null
     });
     if(error){console.warn('Enregistrement demande — erreur Supabase :',error.message);return false;}
-    console.log('Demande d\'offre enregistrée dans Supabase.');return true;
+    console.log('Demande d\'offre enregistrée dans Supabase.');if(window.prTrack)prTrack('generate_lead',{formulaire:'demande_offre',ville:d.ville||''});return true;
   }catch(e){console.warn('Enregistrement demande — exception :',e);return false;}
 }
 /* Enregistre une candidature à une offre dans la table "candidatures". */
@@ -2482,7 +2482,17 @@ document.addEventListener('click',e=>{
 
 const VIEWS=["accueil","offres","pharmaciens","candidat","candidats","vente","tarifs","deposer","compte","admin","legal"];
 let _navSuppress=false;
+/* Titre et page vue Google Analytics pour chaque écran du site */
+const VIEW_TITLES={accueil:"PharmaRecrut — Recrutement & cession en pharmacie",offres:"Offres d'emploi en pharmacie — PharmaRecrut",pharmaciens:"Recruter en pharmacie — PharmaRecrut",candidat:"Espace candidat — PharmaRecrut",candidats:"CVthèque pharmacie — PharmaRecrut",vente:"Cession et vente d'officine — PharmaRecrut",tarifs:"Tarifs — PharmaRecrut",deposer:"Déposer une offre — PharmaRecrut",compte:"Mon compte — PharmaRecrut",admin:"Administration — PharmaRecrut",legal:"Mentions légales — PharmaRecrut"};
+let _prLastView='accueil';
+function trackView(view){
+  if(VIEW_TITLES[view])document.title=VIEW_TITLES[view];
+  if(view===_prLastView||view==='admin')return;
+  _prLastView=view;
+  if(window.prTrack)prTrack('page_view',{page_title:document.title,page_location:location.origin+(view==='accueil'?'/':'/'+view),page_path:(view==='accueil'?'/':'/'+view)});
+}
 function navTo(view){
+  trackView(view);
   if(!_navSuppress){try{history.pushState({v:view,av:session.acctView||null},'','');}catch(e){}}
   VIEWS.forEach(v=>{const n=document.getElementById('view-'+v);if(n)n.classList.toggle('hidden',v!==view);});
   $$('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.nav===view));
@@ -2515,6 +2525,8 @@ window.addEventListener('popstate',e=>{
   _navSuppress=false;
 });
 document.addEventListener('click',e=>{
+  const ct=e.target.closest('a[href^="https://wa.me"],a[href^="tel:"],a[href^="mailto:"]');
+  if(ct&&window.prTrack){const h=ct.getAttribute('href');prTrack('contact_clic',{canal:h.startsWith('tel:')?'telephone':h.startsWith('mailto:')?'email':'whatsapp'});}
   const su=e.target.closest('[data-signup]');
   if(su){e.preventDefault();loginPreselect=su.dataset.signup;acctSectionAfterLogin=(su.dataset.signup==='candidat')?'profil':'dashboard';navTo('compte');return;}
   const nav=e.target.closest('[data-nav]');
@@ -3447,7 +3459,7 @@ async function oauthLogin(provider){
 }
 function doLogin(type,silent){
   session.loggedIn=true;session.role=type;
-  if(window.prTrack)prTrack(silent?'login':'connexion',{type_compte:type});
+  if(!silent&&window.prTrack)prTrack('login',{type_compte:type});
   try{localStorage.setItem('pr_role',type);}catch(e){}
   /* On mémorise le type de compte dans Supabase s'il n'y est pas encore (utile après Google / Facebook) */
   if(supa&&authUser&&!((authUser.user_metadata||{}).role)){supa.auth.updateUser({data:{role:type}}).catch(()=>{});}
@@ -3568,6 +3580,7 @@ function bindLogin(){
           else toast("Inscription impossible : "+error.message);
           b.disabled=false;return;
         }
+        if(window.prTrack)prTrack('sign_up',{method:'email',type_compte:loginPreselect||''});
         if(data.session){
           authUser=data.session.user;
           pendingSignup={prenom:pr,nom:nm,mail:em,tel:tl};
